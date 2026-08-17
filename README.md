@@ -15,7 +15,7 @@ O projeto utiliza uma **mini empilhadeira robótica** como plataforma experiment
 
 ## 🎯 Objetivo
 
-O objetivo do LOGIFORK é desenvolver e validar uma solução capaz de executar autonomamente operações de movimentação de pallets.
+O objetivo do LOGIFORK é desenvolver e validar uma solução capaz de executar operações de movimentação de pallets.
 
 O fluxo básico de operação consiste em:
 
