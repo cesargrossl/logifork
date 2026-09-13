@@ -105,3 +105,7 @@ O LOGIFORK é uma plataforma experimental voltada principalmente para estudos re
 * Automação de processos logísticos.
 
 
+## Reinicializar Wts
+sudo systemctl restart xrdp
+
+
