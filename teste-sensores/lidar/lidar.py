@@ -1,390 +1,195 @@
-import sys
-import time
-import signal
-from rplidar import RPLidar, RPLidarException
+import asyncio
+from rplidarc1.scanner import RPLidar
 
-
-# ============================================================
-# CONFIGURAÇÕES
-# ============================================================
 
 PORTA = "/dev/ttyUSB0"
-
-# RPLIDAR C1
 BAUDRATE = 460800
 
-TIMEOUT = 3
 
-# Distâncias que serão consideradas válidas
-DISTANCIA_MIN_MM = 50
-DISTANCIA_MAX_MM = 12000
-
-
-# ============================================================
-# VARIÁVEIS
-# ============================================================
-
-lidar = None
-executando = True
+lidar = RPLidar(
+    PORTA,
+    BAUDRATE
+)
 
 
-# ============================================================
-# ENCERRAMENTO SEGURO
-# ============================================================
-
-def encerrar_lidar():
-    global lidar
-
-    if lidar is None:
-        return
-
-    print("\nEncerrando LiDAR...")
-
-    try:
-        lidar.stop()
-    except Exception:
-        pass
-
-    try:
-        lidar.stop_motor()
-    except Exception:
-        pass
-
-    try:
-        lidar.disconnect()
-    except Exception:
-        pass
-
-    lidar = None
-
-    print("LiDAR desconectado.")
-
-
-def sinal_encerramento(signum, frame):
-    global executando
-
-    print("\nSolicitação de encerramento recebida...")
-
-    executando = False
-
-    encerrar_lidar()
-
-    sys.exit(0)
-
-
-signal.signal(signal.SIGINT, sinal_encerramento)
-signal.signal(signal.SIGTERM, sinal_encerramento)
-
-
-# ============================================================
-# CONEXÃO
-# ============================================================
-
-def conectar_lidar():
-    global lidar
-
+async def mostrar_dados():
     print("=" * 60)
-    print("TESTE RPLIDAR C1")
+    print("RPLIDAR C1 - TESTE DE VARREDURA")
     print("=" * 60)
-
-    print(f"Porta     : {PORTA}")
-    print(f"Baudrate  : {BAUDRATE}")
-    print()
-
-    print("Conectando ao LiDAR...")
-
-    lidar = RPLidar(
-        PORTA,
-        baudrate=BAUDRATE,
-        timeout=TIMEOUT
-    )
-
-    time.sleep(1)
-
-    print("Conexão realizada.")
-
-
-# ============================================================
-# INFORMAÇÕES DO LIDAR
-# ============================================================
-
-def mostrar_informacoes():
-
-    print("\n" + "=" * 60)
-    print("INFORMAÇÕES DO LIDAR")
-    print("=" * 60)
-
-    try:
-        info = lidar.get_info()
-
-        print(f"Modelo            : {info.get('model')}")
-        print(f"Firmware          : {info.get('firmware')}")
-        print(f"Hardware          : {info.get('hardware')}")
-        print(f"Número de série   : {info.get('serialnumber')}")
-
-    except Exception as erro:
-
-        print("Não foi possível obter as informações.")
-        print(f"Erro: {erro}")
-
-
-# ============================================================
-# SAÚDE DO LIDAR
-# ============================================================
-
-def verificar_saude():
-
-    print("\n" + "=" * 60)
-    print("STATUS DO LIDAR")
-    print("=" * 60)
-
-    try:
-        status, codigo = lidar.get_health()
-
-        print(f"Status : {status}")
-        print(f"Código : {codigo}")
-
-        if status.lower() == "good":
-            print("LiDAR funcionando corretamente.")
-
-        elif status.lower() == "warning":
-            print("ATENÇÃO: LiDAR retornou WARNING.")
-
-        elif status.lower() == "error":
-            print("ERRO reportado pelo LiDAR.")
-
-    except Exception as erro:
-
-        print("Não foi possível verificar a saúde.")
-        print(f"Erro: {erro}")
-
-
-# ============================================================
-# PROCESSAMENTO DA VARREDURA
-# ============================================================
-
-def testar_varredura():
-
-    global executando
-
-    print("\n" + "=" * 60)
-    print("INICIANDO VARREDURA")
-    print("=" * 60)
-
-    print()
-    print("Formato:")
-    print("Ângulo | Distância | Qualidade")
+    print(f"Porta: {PORTA}")
+    print(f"Baudrate: {BAUDRATE}")
     print()
     print("Pressione CTRL+C para encerrar.")
     print()
 
-    contador_scan = 0
+    async def scanner():
+        await lidar.simple_scan(
+            make_return_dict=True
+        )
 
-    try:
+    async def visualizar():
+        while True:
+            await asyncio.sleep(0.5)
 
-        for scan in lidar.iter_scans():
+            dados = lidar.output_dict.copy()
 
-            if not executando:
-                break
-
-            contador_scan += 1
+            if not dados:
+                print("Aguardando pontos do LiDAR...")
+                continue
 
             print()
             print("-" * 60)
-            print(
-                f"SCAN #{contador_scan} | "
-                f"Pontos recebidos: {len(scan)}"
-            )
+            print(f"Pontos recebidos: {len(dados)}")
             print("-" * 60)
 
-            pontos_validos = []
-
-            for medida in scan:
-
-                qualidade = medida[0]
-                angulo = medida[1]
-                distancia = medida[2]
-
-                if (
-                    DISTANCIA_MIN_MM
-                    <= distancia
-                    <= DISTANCIA_MAX_MM
-                ):
-
-                    pontos_validos.append(
-                        (
-                            qualidade,
-                            angulo,
-                            distancia
-                        )
-                    )
-
-            # Ordenar pelo ângulo
-            pontos_validos.sort(
-                key=lambda x: x[1]
-            )
-
-            # ------------------------------------------------
-            # Exibir alguns ângulos
-            # ------------------------------------------------
-
-            for qualidade, angulo, distancia in pontos_validos:
-
-                # Mostra aproximadamente a cada 10 graus
-                if int(angulo) % 10 == 0:
-
-                    distancia_metros = distancia / 1000
-
-                    print(
-                        f"Ângulo: {angulo:7.2f}° | "
-                        f"Distância: {distancia_metros:6.3f} m | "
-                        f"Qualidade: {qualidade}"
-                    )
-
-            # ------------------------------------------------
-            # Distância frontal
-            # ------------------------------------------------
+            # ==================================================
+            # DISTÂNCIA FRONTAL
+            # ==================================================
 
             frente = []
 
-            for qualidade, angulo, distancia in pontos_validos:
+            for angulo, distancia in dados.items():
 
-                # Frente do LiDAR
-                # região aproximada entre 355° e 5°
-                if angulo >= 355 or angulo <= 5:
+                if distancia is None:
+                    continue
 
+                try:
+                    angulo = float(angulo)
+                    distancia = float(distancia)
+                except (TypeError, ValueError):
+                    continue
+
+                if distancia <= 0:
+                    continue
+
+                if angulo <= 5 or angulo >= 355:
                     frente.append(distancia)
 
             if frente:
+                menor = min(frente)
 
-                distancia_frontal = min(frente)
-
-                print()
                 print(
-                    ">>> DISTÂNCIA FRONTAL: "
-                    f"{distancia_frontal / 1000:.3f} m"
+                    f"FRENTE: {menor / 1000:.3f} m"
                 )
+            else:
+                print("FRENTE: sem leitura válida")
 
-    except KeyboardInterrupt:
+            # ==================================================
+            # ÂNGULOS DE REFERÊNCIA
+            # ==================================================
 
-        print("\nCTRL+C detectado.")
+            referencias = [
+                0,
+                45,
+                90,
+                135,
+                180,
+                225,
+                270,
+                315
+            ]
 
-    except RPLidarException as erro:
+            for ref in referencias:
 
-        print()
-        print("ERRO RPLIDAR:")
-        print(erro)
+                mais_proximo = None
+                menor_diferenca = 999
 
-    except Exception as erro:
+                for angulo, distancia in dados.items():
 
-        print()
-        print("ERRO INESPERADO:")
-        print(type(erro).__name__)
-        print(erro)
+                    if distancia is None:
+                        continue
 
-    finally:
+                    try:
+                        angulo_float = float(angulo)
+                        distancia_float = float(distancia)
+                    except (TypeError, ValueError):
+                        continue
 
-        encerrar_lidar()
+                    if distancia_float <= 0:
+                        continue
 
+                    diferenca = abs(
+                        angulo_float - ref
+                    )
 
-# ============================================================
-# MAIN
-# ============================================================
+                    if diferenca > 180:
+                        diferenca = 360 - diferenca
 
-def main():
+                    if diferenca < menor_diferenca:
+
+                        menor_diferenca = diferenca
+
+                        mais_proximo = (
+                            angulo_float,
+                            distancia_float
+                        )
+
+                if mais_proximo:
+
+                    angulo, distancia = mais_proximo
+
+                    print(
+                        f"{angulo:7.2f}° : "
+                        f"{distancia / 1000:6.3f} m"
+                    )
+
+                else:
+
+                    print(
+                        f"{ref:7.2f}° : "
+                        f"sem leitura"
+                    )
 
     try:
 
-        conectar_lidar()
+        async with asyncio.TaskGroup() as tg:
 
-        mostrar_informacoes()
+            tg.create_task(scanner())
 
-        verificar_saude()
-
-        print()
-        print("Aguardando estabilização do LiDAR...")
-        time.sleep(2)
-
-        testar_varredura()
-
-    except PermissionError:
-
-        print()
-        print("=" * 60)
-        print("ERRO DE PERMISSÃO")
-        print("=" * 60)
-
-        print()
-        print(
-            f"Sem permissão para acessar {PORTA}"
-        )
-
-        print()
-        print("Execute:")
-        print()
-        print("sudo usermod -aG dialout $USER")
-        print()
-        print("Depois reinicie o Raspberry.")
-
-    except FileNotFoundError:
-
-        print()
-        print("=" * 60)
-        print("PORTA SERIAL NÃO ENCONTRADA")
-        print("=" * 60)
-
-        print()
-        print(
-            f"A porta {PORTA} não existe."
-        )
-
-        print()
-        print("Verifique com:")
-        print()
-        print("ls /dev/ttyUSB*")
-        print()
-        print("ou")
-        print()
-        print("ls /dev/ttyACM*")
-
-    except RPLidarException as erro:
-
-        print()
-        print("=" * 60)
-        print("ERRO DE COMUNICAÇÃO COM O RPLIDAR")
-        print("=" * 60)
-
-        print()
-        print(erro)
-
-        print()
-        print("Possíveis causas:")
-        print("- Porta serial incorreta")
-        print("- Baudrate incorreto")
-        print("- LiDAR sendo utilizado por outro programa")
-        print("- Alimentação insuficiente")
-        print("- Cabo USB")
-        print("- Permissão da porta serial")
-
-    except Exception as erro:
-
-        print()
-        print("=" * 60)
-        print("ERRO")
-        print("=" * 60)
-
-        print()
-        print(type(erro).__name__)
-        print(erro)
+            tg.create_task(visualizar())
 
     finally:
 
-        encerrar_lidar()
+        try:
+            lidar.stop_event.set()
+        except Exception:
+            pass
 
 
-# ============================================================
-# EXECUÇÃO
-# ============================================================
+def encerrar():
 
-if __name__ == "__main__":
-    main()
+    print()
+    print("Encerrando RPLIDAR C1...")
+
+    try:
+        lidar.stop_event.set()
+    except Exception:
+        pass
+
+    try:
+        lidar.reset()
+    except Exception:
+        pass
+
+    try:
+        lidar.shutdown()
+    except Exception:
+        pass
+
+    print("RPLIDAR C1 desconectado.")
+
+
+try:
+
+    asyncio.run(
+        mostrar_dados()
+    )
+
+except KeyboardInterrupt:
+
+    print()
+    print("CTRL+C detectado.")
+
+finally:
+
+    encerrar()
